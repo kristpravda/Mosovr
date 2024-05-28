@@ -6,6 +6,31 @@ let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
 let gui;
 let stereoCamera;
+let texture;
+let textureVideo;
+let plane;
+let planeVertices = [1, 1, 0, -1, -1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, 1, -1, 0]
+let planeTextures = [0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1]
+function CreateTextureVideo() {
+    textureVideo = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, textureVideo);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+let video;
+let track;
+function CreateVideo() {
+    video = document.createElement('video');
+    video.setAttribute('autoplay', true);
+    navigator.getUserMedia({ video: true, audio: false }, function (stream) {
+        video.srcObject = stream;
+        track = stream.getTracks()[0];
+    }, function (e) {
+        console.error('Rejected!', e);
+    });
+}
 
 function deg2rad(angle) {
     return angle * Math.PI / 180;
@@ -85,10 +110,33 @@ function draw() {
        combined transformation matrix, and send that to the shader program. */
     let modelViewProjection = m4.multiply(projection, matAccum1);
 
-    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection);
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, m4.identity());
 
     /* Draw the six faces of a cube, with different colors. */
     gl.uniform4fv(shProgram.iColor, [1, 1, 0, 1]);
+    gl.bindTexture(gl.TEXTURE_2D, textureVideo);
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        video
+    );
+    plane.Draw()
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.clear(gl.DEPTH_BUFFER_BIT)
+    const pos = {
+        x: 0.5 * Math.cos(Date.now() * 0.0001),
+        y: 0.5,
+        z: 0.5 * Math.sin(Date.now() * 0.0001)
+    }
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, m4.multiply(m4.identity(), m4.multiply(m4.translation(pos.x, pos.y, pos.z), m4.scaling(0.1, 0.1, 0.1))));
+    audioSrfc.Draw()
+    gl.clear(gl.DEPTH_BUFFER_BIT)
+    if (stereoPanner) {
+        stereoPanner.setPosition(pos.x, pos.y, pos.z)
+    }
     stereoCamera.ApplyLeftFrustum();
 
     modelViewProjection = m4.multiply(stereoCamera.projection, m4.multiply(stereoCamera.modelView, matAccum1));
@@ -210,7 +258,11 @@ function initGL() {
     shProgram.iColor = gl.getUniformLocation(prog, "color");
 
     surface = new Model('Surface');
+    plane = new Model('Plane');
+    audioSrfc = new Model('Sphere');
     surface.BufferData(CreateSurfaceData()[0], CreateSurfaceData()[2]);
+    plane.BufferData(planeVertices, planeTextures);
+    audioSrfc.BufferData(CreateSphere(1), CreateSphere(1));
 
     gl.enable(gl.DEPTH_TEST);
 }
@@ -252,6 +304,7 @@ function createProgram(gl, vShader, fShader) {
  * initialization function that will be called when the page has loaded
  */
 function init() {
+    CreateVideo()
     gui = new dat.GUI();
     let canvas;
     try {
@@ -274,6 +327,14 @@ function init() {
             "<p>Sorry, could not initialize the WebGL graphics context: " + e + "</p>";
         return;
     }
+    try {
+        initA();  // initialize the WebAudio HTML5 API context
+    } catch (e) {
+        document.getElementById("canvas-holder").innerHTML =
+            "<p>Sorry, could not initialize the WebAudio HTML5 API context: " + e + "</p>";
+        console.log(e)
+        return;
+    }
 
     stereoCamera = new StereoCamera(50, 1, 1, 45, 6, 100)
     gui.add(stereoCamera, 'mConvergence', 10, 100, 1)
@@ -283,11 +344,12 @@ function init() {
 
     spaceball = new TrackballRotator(canvas, draw, 0);
     LoadTexture()
+    CreateTextureVideo();
     drawe();
 }
 
 function LoadTexture() {
-    let texture = gl.createTexture();
+    texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
